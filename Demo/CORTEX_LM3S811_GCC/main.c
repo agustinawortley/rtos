@@ -67,7 +67,6 @@ static void vTopTask(void *pvParameters);
 char *itoa(int val);
 char* longToChar(unsigned long value, char *ptr, int base);
 static void uartPrint(char * msg,uint8_t len);
-void getTasksStats( char *writeUART );
 void vOwnTaskGetRunTimeStats(signed char *pcWriteBuffer);
 static void to_terminal(char* s);
 
@@ -253,7 +252,7 @@ static void vFilterTask(void *pvParameters)
 	unsigned int avg = 0;
 	unsigned int new_N;
 	unsigned int array[MAX_VALUE_N] = {0};
-	unsigned int aux[MAX_VALUE_N];
+	unsigned int aux[MAX_VALUE_N] = {0};
 	N = 1;
 	char *val;
 
@@ -349,59 +348,10 @@ static void vGraficTask(void *pvParameters)
 
 /*--------------------------------TOP---------------------------------------------*/
 
-//carga en el string la info de las tasks para imprimir por UART
-void getTasksStats(char *string)
-{
-	volatile UBaseType_t uxArraySize, x;
-	unsigned long ulTotalRunTime, ulStatsAsPercentage;
-	char aux [10]= {0};
-	uxArraySize = uxTaskGetNumberOfTasks();
-	for(int i = 0 ; i < 5 ; i++)
-	{
-		memset(&pxTaskStatusArray[x], 0, sizeof(&pxTaskStatusArray[x]));
-	}	
-	if( pxTaskStatusArray != NULL )
-	{
-		/* Generate raw status information about each task. */
-		uxArraySize = uxTaskGetSystemState( pxTaskStatusArray,uxArraySize, &ulTotalRunTime );
-		if( ulTotalRunTime > 0 )
-		{
-			for(x = 0; x < uxArraySize; x++)
-			{
-				ulStatsAsPercentage = pxTaskStatusArray[ x ].ulRunTimeCounter / (ulTotalRunTime / 100UL);
-				strcat(string , "Task: ");
-				strcat(string , pxTaskStatusArray[ x ].pcTaskName);
-				strcat(string , "\n");
-				if( ulStatsAsPercentage > 0UL ){
-					strcat(string , "CPU (%): ");
-					longToChar(ulStatsAsPercentage, aux,10);
-					strncat(string, aux, strlen(aux));
-				}
-				else{
-					strcat(string , "CPU: <1%\n");
-				}
-				strcat(string, "Stack High Watermark: ");
-				longToChar(pxTaskStatusArray[x].usStackHighWaterMark, aux, 10);
-				strncat(string, aux, strlen(aux));
-				strcat(string, "Total time allocated: ");
-				longToChar(pxTaskStatusArray[x].ulRunTimeCounter, aux, 10);
-				strcat(string, aux);
-				strcat(string, "\t-----\n");
-			
-			}
-   		}
-	}
-}
-
-
 // Se analiza la informacion de las tareas en uso 
 static void vTopTask(void *pvParameters )
 {
 	char pcMessage[150];
-	char line[46] = "---------------------------------------------";
-	char header[46];
-	char stack[64];
-
 	// UBaseType_t uxHighWaterMark_Stack;
 	// char aux_watermark[16];
 
@@ -411,14 +361,75 @@ static void vTopTask(void *pvParameters )
 
 		to_terminal(pcMessage);
 
-		vTaskDelay(2000);
-
-		vTaskDelay( pdMS_TO_TICKS(10000) );
+		vTaskDelay( pdMS_TO_TICKS(3000) );
 		
 		// uxHighWaterMark_Stack = uxTaskGetStackHighWaterMark(NULL); //devuelve el espacio que quedo vacio en la pila
 		// uartPrint( longToChar(uxHighWaterMark_Stack, aux_watermark, 10) , strlen(longToChar(uxHighWaterMark_Stack, aux_watermark, 10)) );
 	}
 
+}
+
+//esta funcion carga en el string info de la cantidad de tiempo de procesamiento que ha utilizado cada tarea, para imprimir por UART
+// Tiempo absoluto: Este es el 'tiempo' total que la tarea se ha estado ejecutando realmente (el tiempo total que la tarea ha sido en el estado de ejecución
+void vOwnTaskGetRunTimeStats(signed char *pcWriteBuffer){
+	TaskStatus_t *pxTaskStatusArray;
+	volatile UBaseType_t uxArraySize, x;
+	uint32_t ulTotalRunTime, ulStatsAsPercentage;
+	char aux[16];
+
+	/* Make sure the write buffer does not contain a string. */
+	*pcWriteBuffer = 0x00;
+
+	/* Take a snapshot of the number of tasks in case it changes while this
+	function is executing. */
+	uxArraySize = uxTaskGetNumberOfTasks();
+
+	/* Allocate a TaskStatus_t structure for each task.  An array could be
+	allocated statically at compile time. */
+	pxTaskStatusArray = pvPortMalloc(uxArraySize*sizeof(TaskStatus_t));
+
+	if(pxTaskStatusArray != NULL){
+		/* Generate raw status information about each task. */
+		uxArraySize = uxTaskGetSystemState( pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
+
+		/* For percentage calculations. */
+		ulTotalRunTime /= 100UL;
+
+		/* Avoid divide by zero errors. */
+		if(ulTotalRunTime > 0){
+			// strcat(pcWriteBuffer, "Name\t\tRunTime\t\t%RunTime\n");
+			strcat(pcWriteBuffer, "====================================\n");
+			strcat(pcWriteBuffer, "Task	Abs Time\n");
+			strcat(pcWriteBuffer, "************************************\n");
+			/* For each populated position in the pxTaskStatusArray array,
+			format the raw data as human readable ASCII data. */
+			for(x = 0; x<uxArraySize; x++){
+				/* What percentage of the total run time has the task used?
+				This will always be rounded down to the nearest integer.
+				ulTotalRunTimeDiv100 has already been divided by 100. */
+				ulStatsAsPercentage = pxTaskStatusArray[ x ].ulRunTimeCounter / ulTotalRunTime;
+
+				if(ulStatsAsPercentage > 0UL){
+					strcat(pcWriteBuffer, pxTaskStatusArray[x].pcTaskName);
+					strcat(pcWriteBuffer, "\t");
+					strcat(pcWriteBuffer, longToChar(pxTaskStatusArray[ x ].ulRunTimeCounter, aux, 10));
+					strcat(pcWriteBuffer, "\n");
+				}
+				else{
+					/* If the percentage is zero here then the task has
+					consumed less than 1% of the total run time. */
+					strcat(pcWriteBuffer, pxTaskStatusArray[x].pcTaskName);
+					strcat(pcWriteBuffer, "\t");
+					strcat(pcWriteBuffer, longToChar(pxTaskStatusArray[ x ].ulRunTimeCounter, aux, 10));
+					strcat(pcWriteBuffer, "\n");
+				}
+
+				pcWriteBuffer += strlen( ( char * ) pcWriteBuffer );
+			}
+		}
+		/* The array is no longer needed, free the memory it consumes. */
+		vPortFree( pxTaskStatusArray );
+	}
 }
 
 /*--------------------------------AUX------------------------------------------*/
@@ -478,65 +489,6 @@ char* longToChar(unsigned long value, char *ptr, int base)
 
 void intToString(int value, char *aux){
 	sprintf(aux, "%d\n", value);
-}
-
-void vOwnTaskGetRunTimeStats(signed char *pcWriteBuffer){
-	TaskStatus_t *pxTaskStatusArray;
-	volatile UBaseType_t uxArraySize, x;
-	uint32_t ulTotalRunTime, ulStatsAsPercentage;
-	char aux[16];
-
-	/* Make sure the write buffer does not contain a string. */
-	*pcWriteBuffer = 0x00;
-
-	/* Take a snapshot of the number of tasks in case it changes while this
-	function is executing. */
-	uxArraySize = uxTaskGetNumberOfTasks();
-
-	/* Allocate a TaskStatus_t structure for each task.  An array could be
-	allocated statically at compile time. */
-	pxTaskStatusArray = pvPortMalloc(uxArraySize*sizeof(TaskStatus_t));
-
-	if(pxTaskStatusArray != NULL){
-		/* Generate raw status information about each task. */
-		uxArraySize = uxTaskGetSystemState( pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
-
-		/* For percentage calculations. */
-		ulTotalRunTime /= 100UL;
-
-		/* Avoid divide by zero errors. */
-		if(ulTotalRunTime > 0){
-			// strcat(pcWriteBuffer, "Name\t\tRunTime\t\t%RunTime\n");
-			strcat(pcWriteBuffer, "-----------------------------\n");
-			/* For each populated position in the pxTaskStatusArray array,
-			format the raw data as human readable ASCII data. */
-			for(x = 0; x<uxArraySize; x++){
-				/* What percentage of the total run time has the task used?
-				This will always be rounded down to the nearest integer.
-				ulTotalRunTimeDiv100 has already been divided by 100. */
-				ulStatsAsPercentage = pxTaskStatusArray[ x ].ulRunTimeCounter / ulTotalRunTime;
-
-				if(ulStatsAsPercentage > 0UL){
-					strcat(pcWriteBuffer, pxTaskStatusArray[x].pcTaskName);
-					strcat(pcWriteBuffer, "\t");
-					strcat(pcWriteBuffer, longToChar(pxTaskStatusArray[ x ].ulRunTimeCounter, aux, 10));
-					strcat(pcWriteBuffer, "\n");
-				}
-				else{
-					/* If the percentage is zero here then the task has
-					consumed less than 1% of the total run time. */
-					strcat(pcWriteBuffer, pxTaskStatusArray[x].pcTaskName);
-					strcat(pcWriteBuffer, "\t");
-					strcat(pcWriteBuffer, longToChar(pxTaskStatusArray[ x ].ulRunTimeCounter, aux, 10));
-					strcat(pcWriteBuffer, "\n");
-				}
-
-				pcWriteBuffer += strlen( ( char * ) pcWriteBuffer );
-			}
-		}
-		/* The array is no longer needed, free the memory it consumes. */
-		vPortFree( pxTaskStatusArray );
-	}
 }
 
 static void to_terminal(char* s){
