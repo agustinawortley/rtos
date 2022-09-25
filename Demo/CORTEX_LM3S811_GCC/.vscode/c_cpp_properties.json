@@ -1,0 +1,18 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/lalo-notebook/Documents/OS2-TP4/FreeRTOSv202104.00/FreeRTOS/Source/include/**",
+                "/home/lalo-notebook/Documents/OS2-TP4/FreeRTOSv202104.00/FreeRTOS/Demo/Common/include/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++14",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
